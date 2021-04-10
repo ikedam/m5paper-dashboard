@@ -23,7 +23,7 @@ namespace SHT3X
       return _cTemp;
     }
 
-    uint_fast8_t getHumidity(void) const
+    float getHumidity(void) const
     {
       return _humidity;
     }
@@ -31,7 +31,7 @@ namespace SHT3X
   private:
     TwoWire &_wire;
     float _cTemp = 0;
-    uint_fast8_t _humidity = 0;
+    float _humidity = 0;
     static constexpr int Addr = 0x44;
 
     static uint8_t crc8(const uint8_t *data, const int len);

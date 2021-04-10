@@ -1,7 +1,5 @@
 #include <M5EPD.h>
 #include <ArduinoOTA.h>
-#define FASTLED_INTERNAL //suppress pragma message
-#include <FastLED.h>
 #include "SHT3X.h"
 #include "WiFiInfo.h"
 
@@ -10,6 +8,7 @@
 #include "myFont.h"
 #include "misc.h"
 
+constexpr float FONT_SIZE_XLARGE = 5.0;
 constexpr float FONT_SIZE_LARGE = 3.0;
 constexpr float FONT_SIZE_SMALL = 1.0;
 constexpr uint_fast16_t M5PAPER_SIZE_LONG_SIDE = 960;
@@ -18,11 +17,20 @@ constexpr uint_fast16_t M5PAPER_SIZE_SHORT_SIDE = 540;
 rtc_time_t time_ntp;
 rtc_date_t date_ntp{4, 1, 1, 1970};
 
-TwoWire &wire_portA = Wire1;
+// Somehow, Wire1 doesn't work with the internal SHT30.
+TwoWire &wire_portA = Wire;
 SemaphoreHandle_t xMutex = nullptr;
 SHT3X::SHT3X sht30(wire_portA);
 LGFX gfx;
-CRGB leds[3];
+
+struct State {
+  bool display;
+  int8_t min;
+  float tmp;
+  float hum;
+};
+
+State lastState = {0};
 
 inline int syncNTPTimeJP(void)
 {
@@ -53,6 +61,7 @@ inline int syncNTPTimeJP(void)
 void handleBtnPPress(void)
 {
   xSemaphoreTake(xMutex, portMAX_DELAY);
+  lastState.display = false;
   prettyEpdRefresh(gfx);
   gfx.setTextSize(FONT_SIZE_SMALL);
 
@@ -92,6 +101,7 @@ void handleBtnPPress(void)
 inline void handleBtnRPress(void)
 {
   xSemaphoreTake(xMutex, portMAX_DELAY);
+  lastState.display = false;
   prettyEpdRefresh(gfx);
   xSemaphoreGive(xMutex);
 }
@@ -99,6 +109,7 @@ inline void handleBtnRPress(void)
 void handleBtnLPress(void)
 {
   xSemaphoreTake(xMutex, portMAX_DELAY);
+  lastState.display = false;
   prettyEpdRefresh(gfx);
   gfx.setCursor(0, 0);
   gfx.setTextSize(FONT_SIZE_SMALL);
@@ -141,9 +152,6 @@ void setup(void)
 
   M5.begin(true, false, true, true, true, true);
   WiFi.begin(WiFiInfo::SSID, WiFiInfo::PASS);
-
-  FastLED.addLeds<WS2811, 26, GRB>(leds, 3).setCorrection(TypicalSMD5050);
-  FastLED.setBrightness(5);
 
   gfx.init();
   gfx.setEpdMode(epd_mode_t::epd_fast);
@@ -206,7 +214,7 @@ void setup(void)
   ArduinoOTA.begin();
 
   // env2 unit
-  if (!sht30.begin(25, 32, 400000))
+  if (!sht30.begin(21, 22, 400000))
   {
     gfx.println("Failed to initialize external I2C");
   }
@@ -230,7 +238,7 @@ void setup(void)
 
 void loop(void)
 {
-  constexpr uint_fast16_t SLEEP_SEC = 5;
+  constexpr uint_fast16_t SLEEP_SEC = 10;
   constexpr uint_fast32_t TIME_SYNC_CYCLE = 7 * 3600 * 24 / SLEEP_SEC;
 
   static uint32_t cnt = 0;
@@ -239,78 +247,103 @@ void loop(void)
   ArduinoOTA.handle();
 
   float tmp = 0.0;
-  uint_fast8_t hum = 0;
+  float hum = 0;
 
-  if (!sht30.read())
+  int shterr = sht30.read();
+  if (!shterr)
   {
     tmp = sht30.getTemperature();
     hum = sht30.getHumidity();
   }
-  auto co2 = getCo2Data();
-  setLEDColor(leds, co2);
 
   rtc_date_t date;
   rtc_time_t time;
 
   M5.RTC.getDateTime(date, time);
 
-  gfx.startWrite();
-  gfx.fillScreen(TFT_WHITE);
-  gfx.fillRect(0.57 * M5PAPER_SIZE_LONG_SIDE, 0, 3, M5PAPER_SIZE_SHORT_SIDE, TFT_BLACK);
+  if (
+    !lastState.display
+    || lastState.min != time.min
+    || lastState.tmp != tmp
+    || lastState.hum != hum
+  ) {
+    lastState.display = true;
+    lastState.min = time.min;
+    lastState.tmp = tmp;
+    lastState.hum = hum;
 
-  constexpr uint_fast16_t offset_y = 30;
-  constexpr uint_fast16_t offset_x = 45;
+    gfx.startWrite();
+    gfx.fillScreen(TFT_WHITE);
+    gfx.fillRect(0.57 * M5PAPER_SIZE_LONG_SIDE, 0, 3, M5PAPER_SIZE_SHORT_SIDE, TFT_BLACK);
 
-  gfx.setCursor(0, offset_y);
-  gfx.setClipRect(offset_x, offset_y, M5PAPER_SIZE_LONG_SIDE - offset_x, M5PAPER_SIZE_SHORT_SIDE - offset_y);
-  gfx.printf("%02d:%02d:%02d\r\n", time.hour, time.min, time.sec);
-  gfx.printf("%04dppm\r\n", co2);
-  gfx.printf("%02.1f℃\r\n", tmp);
-  gfx.printf("%0d%%", hum);
-  gfx.clearClipRect();
+    constexpr uint_fast16_t offset_y = 30;
+    constexpr uint_fast16_t offset_x = 45;
 
-  constexpr float x = 0.61 * M5PAPER_SIZE_LONG_SIDE;
-  gfx.setCursor(0, offset_y);
-  gfx.setClipRect(x, offset_y, M5PAPER_SIZE_LONG_SIDE - offset_x - x, M5PAPER_SIZE_SHORT_SIDE - offset_y);
-  gfx.printf("%04d\r\n", date.year);
-  gfx.printf("%02d/%02d\r\n", date.mon, date.day);
-  gfx.println(weekdayToString(date.week));
-  gfx.clearClipRect();
+    gfx.setCursor(0, offset_y);
+    gfx.setClipRect(offset_x, offset_y, M5PAPER_SIZE_LONG_SIDE - offset_x, M5PAPER_SIZE_SHORT_SIDE - offset_y);
+    gfx.setTextSize(FONT_SIZE_XLARGE);
+    gfx.printf("%02d:%02d\r\n", time.hour, time.min);
+    gfx.setTextSize(FONT_SIZE_LARGE);
+    if (!shterr) {
+      gfx.printf("%02.1f℃\r\n", tmp);
+      gfx.printf("%02.1f%%\r\n", hum);
+    } else {
+      gfx.printf("--.-℃\r\n");
+      gfx.printf("--.-%%\r\n");
+      gfx.setTextSize(FONT_SIZE_SMALL);
+      gfx.printf("SHT30 err: %d", shterr);
+      gfx.setTextSize(FONT_SIZE_LARGE);
+    }
+    gfx.clearClipRect();
 
-  constexpr float offset_y_info = 0.75 * M5PAPER_SIZE_SHORT_SIDE;
-  gfx.setCursor(0, offset_y_info);
-  gfx.setTextSize(FONT_SIZE_SMALL);
-  gfx.setClipRect(x, offset_y_info, M5PAPER_SIZE_LONG_SIDE - x, gfx.height() - offset_y_info);
-  gfx.print("WiFi: ");
-  gfx.println(WiFiConnectedToString());
+    constexpr float x = 0.61 * M5PAPER_SIZE_LONG_SIDE;
+    gfx.setCursor(0, offset_y);
+    gfx.setClipRect(x, offset_y, M5PAPER_SIZE_LONG_SIDE - offset_x - x, M5PAPER_SIZE_SHORT_SIDE - offset_y);
+    gfx.printf("%04d\r\n", date.year);
+    gfx.printf("%02d/%02d\r\n", date.mon, date.day);
+    gfx.println(weekdayToString(date.week));
+    gfx.clearClipRect();
 
-  constexpr uint32_t low = 3300;
-  constexpr uint32_t high = 4350;
+    constexpr float offset_y_info = 0.75 * M5PAPER_SIZE_SHORT_SIDE;
+    gfx.setCursor(0, offset_y_info);
+    gfx.setTextSize(FONT_SIZE_SMALL);
+    gfx.setClipRect(x, offset_y_info, M5PAPER_SIZE_LONG_SIDE - x, gfx.height() - offset_y_info);
+    gfx.print("WiFi: ");
+    gfx.println(WiFiConnectedToString());
 
-  auto vol = std::min(std::max(M5.getBatteryVoltage(), low), high);
-  gfx.printf("BAT : %04dmv\r\n", vol);
-  gfx.print("NTP : ");
-  if (date_ntp.year == 1970)
-  {
-    gfx.print("YET"); // not initialized
+    constexpr uint32_t low = 3300;
+    constexpr uint32_t high = 4350;
+
+    auto vol = std::min(std::max(M5.getBatteryVoltage(), low), high);
+    gfx.printf("BAT : %04dmv\r\n", vol);
+    gfx.print("NTP : ");
+    if (date_ntp.year == 1970)
+    {
+      gfx.print("YET"); // not initialized
+    }
+    else
+    {
+      gfx.printf("%02d/%02d %02d:%02d",
+                date_ntp.mon, date_ntp.day,
+                time_ntp.hour, time_ntp.min);
+    }
+
+    gfx.clearClipRect();
+    gfx.setTextSize(FONT_SIZE_LARGE);
+    gfx.endWrite();
   }
-  else
-  {
-    gfx.printf("%02d/%02d %02d:%02d",
-               date_ntp.mon, date_ntp.day,
-               time_ntp.hour, time_ntp.min);
-  }
-
-  gfx.clearClipRect();
-  gfx.setTextSize(FONT_SIZE_LARGE);
-  gfx.endWrite();
 
   cnt++;
   if (cnt == TIME_SYNC_CYCLE)
   {
     syncNTPTimeJP();
+    lastState.display = false;
     cnt = 0;
   }
   xSemaphoreGive(xMutex);
-  delay(SLEEP_SEC * 1000);
+  if (60 - time.sec < SLEEP_SEC) {
+    delay((60 - time.sec) * 1000);
+  } else {
+    delay(SLEEP_SEC * 1000);
+  }
 }

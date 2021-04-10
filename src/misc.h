@@ -1,9 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <HTTPClient.h>
-#include <ArduinoJson.hpp>
-#include <FastLED.h>
 
 #include <LovyanGFX.hpp>
 
@@ -32,77 +29,6 @@ String weekdayToString(const int8_t weekDay)
         return String("土");
     }
     return String("");
-}
-
-uint_fast16_t getCo2Data(void)
-{
-    using namespace ArduinoJson;
-    constexpr auto CO2_DATA_URL = "http://192.168.10.105/api/data";
-    constexpr uint16_t HTTP_TIMEOUT = 3000;
-
-    if (!WiFi.isConnected())
-        return 0;
-
-    WiFiClient client;
-    HTTPClient http;
-    if (!http.begin(client, CO2_DATA_URL))
-    {
-        Serial.printf("[HTTP] Failed to parse url\n");
-        return 0;
-    }
-    http.setTimeout(HTTP_TIMEOUT);
-
-    int httpCode = http.GET();
-    if (httpCode != HTTP_CODE_OK)
-    {
-        Serial.printf("[HTTP] GET... failed, error: %s\n",
-                      http.errorToString(httpCode).c_str());
-        http.end();
-        return 0;
-    }
-    StaticJsonDocument<64> filter;
-    filter["co2"]["value"] = true;
-
-    StaticJsonDocument<64> doc;
-    auto err = deserializeJson(doc, client, DeserializationOption::Filter(filter));
-    http.end();
-    if (err)
-    {
-        Serial.printf("[JSON] DeserializationError, error: %s\n", err.c_str());
-        return 0;
-    }
-
-    return doc["co2"]["value"];
-}
-
-void setLEDColor(CRGB *leds, const uint_fast16_t co2)
-{
-    constexpr uint_fast8_t ID_LED_USE = 1;
-    leds[0] = CRGB::Black;
-    leds[2] = CRGB::Black;
-    if (co2 < 600)
-    {
-        leds[ID_LED_USE] = CRGB::White;
-    }
-    else if (co2 < 1200)
-    {
-        leds[ID_LED_USE] = CRGB::Green;
-    }
-    else if (co2 < 1500)
-    {
-        leds[ID_LED_USE] = CRGB::Yellow;
-    }
-    else if (co2 < 2000)
-    {
-        leds[ID_LED_USE] = CRGB::Red;
-    }
-    else
-    {
-        leds[ID_LED_USE] = CRGB::Red;
-        leds[0] = CRGB::Red;
-        leds[2] = CRGB::Red;
-    }
-    FastLED.show();
 }
 
 inline void prettyEpdRefresh(LGFX &gfx)

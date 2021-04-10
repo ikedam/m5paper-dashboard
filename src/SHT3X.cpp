@@ -39,8 +39,10 @@ namespace SHT3X
     // Send measurement command
     _wire.write(COMMAND_MEASURE, 2);
     // Stop I2C transmission
-    if (_wire.endTransmission() != 0)
-      return 1;
+    uint8_t endTrasmissonError = _wire.endTransmission();
+    if (endTrasmissonError != 0) {
+      return endTrasmissonError;
+    }
 
     delay(20);
 
@@ -65,7 +67,7 @@ namespace SHT3X
     // simplified (65536 instead of 65535) integer version of:
     // humidity = (shum * 100.0f) / 65535.0f;
     sHum = (625 * sHum) >> 12;
-    _humidity = static_cast<uint_fast8_t>(sHum / 100);
+    _humidity = static_cast<float>(sHum) / 100.0f;
 
     return 0;
   }
