@@ -239,9 +239,9 @@ void setup(void)
 void loop(void)
 {
   constexpr uint_fast16_t SLEEP_SEC = 10;
-  constexpr uint_fast32_t TIME_SYNC_CYCLE = 7 * 3600 * 24 / SLEEP_SEC;
+  constexpr uint_fast32_t TIME_SYNC_CYCLE = 3600 * 24 / SLEEP_SEC;
 
-  static uint32_t cnt = 0;
+  static uint32_t cnt = TIME_SYNC_CYCLE - 3;
 
   xSemaphoreTake(xMutex, portMAX_DELAY);
   ArduinoOTA.handle();
@@ -334,7 +334,7 @@ void loop(void)
   }
 
   cnt++;
-  if (cnt == TIME_SYNC_CYCLE)
+  if (cnt >= TIME_SYNC_CYCLE)
   {
     syncNTPTimeJP();
     lastState.display = false;
