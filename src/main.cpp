@@ -317,7 +317,12 @@ void loop(void)
     constexpr uint32_t high = 4350;
 
     auto vol = std::min(std::max(M5.getBatteryVoltage(), low), high);
-    gfx.printf("BAT : %04dmv\r\n", vol);
+    // non-reliable battery gauge:
+    // https://github.com/m5stack/M5Stack/issues/74#issuecomment-471381215
+    // doesn't work.
+    // (M2Paper uses SLM6635 for the battery manager and it doesn't support i2c)
+    float percentage = static_cast<float>(vol - low) / static_cast<float>(high - low) * 100.0f;
+    gfx.printf("BAT : %2.1f%%/%04dmv\r\n", percentage, vol);
     gfx.print("NTP : ");
     if (date_ntp.year == 1970)
     {
