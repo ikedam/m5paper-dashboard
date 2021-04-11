@@ -68,3 +68,14 @@ int syncNTPTime(std::function<void(const tm &)> datetimeSetter, const char *tz,
 
     return 0;
 }
+
+struct FixColonBaselineFont: public lgfx::U8g2font {
+    constexpr FixColonBaselineFont(const std::uint8_t *u8g2_font) : lgfx::U8g2font(u8g2_font) {};
+    std::size_t drawChar(lgfx::LGFXBase* gfx, std::int32_t x, std::int32_t y, std::uint16_t c, const lgfx::TextStyle* style) const override {
+        if (c == ':') {
+            // Fix y-position of semicolons as they caused unnatural baselines.
+            y -= style->size_y * 4.0f;
+        }
+        return lgfx::U8g2font::drawChar(gfx, x, y, c, style);
+    }
+};

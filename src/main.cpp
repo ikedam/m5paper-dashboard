@@ -17,11 +17,13 @@ constexpr uint_fast16_t M5PAPER_SIZE_SHORT_SIDE = 540;
 rtc_time_t time_ntp;
 rtc_date_t date_ntp{4, 1, 1, 1970};
 
-// Somehow, Wire1 doesn't work with the internal SHT30.
+// M5Paper uses Wire (not Wire1) for internal components (including SHT30).
 TwoWire &wire_portA = Wire;
 SemaphoreHandle_t xMutex = nullptr;
 SHT3X::SHT3X sht30(wire_portA);
 LGFX gfx;
+
+constexpr FixColonBaselineFont myFixedFont = {myFont::myFont_data};
 
 struct State {
   bool display;
@@ -157,7 +159,7 @@ void setup(void)
   gfx.setEpdMode(epd_mode_t::epd_fast);
   gfx.setRotation(1);
   // gfx.setFont(&fonts::lgfxJapanGothic_40);
-  gfx.setFont(&myFont::myFont);
+  gfx.setFont(&myFixedFont);
   gfx.setTextSize(FONT_SIZE_SMALL);
 
   gfx.print("Connecting to Wi-Fi network");
